@@ -23,6 +23,7 @@ func (m *MongoManger) GetMongoClient() *mongo.Client {
 	return m.mongoClient
 }
 
+// mongo数据库查询返回模糊查询文档
 func (m *MongoManger) GetMongoDataFuzzyByKeyword(keyword string) (interface{}, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
