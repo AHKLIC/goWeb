@@ -36,7 +36,7 @@ func (r *RedisManger) GetSlaveClient() (*redis.Client, error) {
 	return readclient, nil
 }
 
-// NewRedisManager 初始化 RedisManager（v9 哨兵集群+读写分离）
+// NewRedisManager 初始化 RedisManager（哨兵集群+读写分离）
 func NewRedisManager(sentinelOpts *redis.FailoverOptions, maxBatches int) (*RedisManger, error) {
 	// 1. 创建主节点客户端
 	masterClient := redis.NewFailoverClient(sentinelOpts)
