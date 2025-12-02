@@ -45,6 +45,7 @@ func startAccessLogConsumer(ctx context.Context) {
 			return
 		case msg, ok := <-msgs:
 			if !ok {
+				slog.Error("访问日志消费者异常退出")
 				return
 			}
 			var logData LogLayout
