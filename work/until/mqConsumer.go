@@ -80,7 +80,7 @@ func startAccessLogConsumer(ctx context.Context) {
 	}
 }
 
-// startFuzzyQueryConsumer 模糊查询消费者（异步查 DB + 写缓存）
+// startFuzzyQueryConsumer 模糊查询消费者（异步查 DB + 写缓存）实现削峰
 func startFuzzyQueryConsumer(ctx context.Context) {
 	// 注册消费者
 	redisClient := dbm.AllDbManger.RedisManger.GetMasterClient()
