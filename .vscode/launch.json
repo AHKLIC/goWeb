@@ -1,0 +1,19 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+          {
+            "name": "Launch Go Program",  // 配置名称（可自定义）
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",  // 自动模式（根据程序类型选择调试模式）
+            // 指定main包的路径（必填）
+            // 格式：${workspaceFolder}/相对路径（从项目根目录到main包所在目录）
+            "program": "${workspaceFolder}",  
+            "args": [],  // 程序启动参数（可选）
+            "showLog": false  // 是否显示调试日志（可选）
+        }
+    ]
+}
