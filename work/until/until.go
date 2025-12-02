@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// 1. 全局配置（可迁移到 config 包）
+// 1. 全局配置
 const (
 	JWTSecret     = "your-secret-key-32bytes-long-1234" // 生产环境用环境变量读取，至少32位
 	JWTExpireHour = 24 * 30                             // JWT 有效期（小时）
