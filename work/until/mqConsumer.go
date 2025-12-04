@@ -120,7 +120,7 @@ func startFuzzyQueryConsumer(ctx context.Context) {
 					<-sem // 释放信号量
 					if r := recover(); r != nil {
 						slog.Error("模糊查询消费者", "panic:", r)
-						_ = msg.Nack(false, true)
+						_ = msg.Nack(false, true) //丢弃
 					}
 				}()
 

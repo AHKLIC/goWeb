@@ -44,6 +44,7 @@ func main() {
 	defer func() {
 		cancel()
 		until.CloseMQ()
+		dbm.AllDbManger.Close()
 	}()
 	var err error
 	config.InitTimeZone() // 初始化时区

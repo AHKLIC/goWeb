@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github/AHKLIC/Web/work/config"
+	"log/slog"
 	"net"
 	"time"
 
@@ -77,5 +78,25 @@ func NewDbManger() (*DbManger, error) {
 		},
 		RedisManger: redisManage,
 	}, nil
+
+}
+
+func (Db *DbManger) Close() {
+
+	var err error
+	err = Db.mongoClient.Disconnect(context.Background())
+	if err != nil {
+		slog.Error("mongodbConnect clsoe fail", "error", err)
+	}
+	for _, cli := range Db.RedisManger.slaveClients {
+		err = cli.Close()
+		if err != nil {
+			slog.Error("redisSlaves  clsoe fail", "error", err)
+		}
+	}
+	err = Db.RedisManger.masterClient.Close()
+	if err != nil {
+		slog.Error("redisMaster clsoe fail", "error", err)
+	}
 
 }
