@@ -3,7 +3,7 @@ package until
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -19,7 +19,12 @@ const (
 	FuzzyLockPrefix   = "fuzzy:lock:"       // 模糊查询分布式锁前缀
 	FuzzyQueueName    = "fuzzy-query-queue" // 模糊查询 MQ 队列
 	FuzzyCacheExpire  = 10 * time.Minute    // 缓存过期时间（10 分钟）
+	maxPriority       = 10
 )
+
+var priorityQueues = map[string]bool{
+	FuzzyQueueName: true, // 模糊查询队列
+}
 
 // 全局 MQ 信道（单例，避免重复创建）
 var mqChannel *amqp091.Channel
@@ -50,20 +55,25 @@ func InitMQ() error {
 	// 声明队列（持久化、非自动删除、非排他）
 	queues := []string{AccessLogQueueName, FuzzyQueueName}
 	for _, queue := range queues {
+		args := amqp091.Table{}
+		// 若为优先级队列，添加 x-max-priority 参数
+		if priorityQueues[queue] {
+			args["x-max-priority"] = maxPriority
+			slog.Info("正在设置优先队列", "优先级队列：", queue, "最大优先级", maxPriority)
+		}
 		_, err := ch.QueueDeclare(
 			queue,
 			true,  // durable: 队列持久化
 			false, // autoDelete: 不自动删除
 			false, // exclusive: 非排他
 			false, // noWait: 无等待
-			nil,   // 额外参数
+			args,  // 额外参数
 		)
 		if err != nil {
 			return fmt.Errorf("declare queue %s failed: %w", queue, err)
 		}
 	}
-
-	log.Println("MQ 初始化成功（amqp091-go）")
+	slog.Info("MQ 初始化成功（amqp091-go）")
 	return nil
 }
 
@@ -89,11 +99,38 @@ func PublishMQ(ctx context.Context, queueName string, body []byte) error {
 	)
 }
 
+func PublishPriorityMQ(ctx context.Context, queueName string, body []byte, priority uint8) error {
+	if mqChannel == nil {
+		return fmt.Errorf("mq channel not initialized")
+	}
+
+	// 校验优先级（若为优先级队列，优先级不能超过 maxPriority）
+	if priorityQueues[queueName] && priority > maxPriority {
+		return fmt.Errorf("priority exceeds max limit %d", maxPriority)
+	}
+
+	// 发送消息（添加 Priority 字段）
+	return mqChannel.PublishWithContext(
+		ctx,
+		"",        // 默认交换机
+		queueName, // 队列名（路由键）
+		false,     // mandatory
+		false,     // immediate（已废弃）
+		amqp091.Publishing{
+			DeliveryMode: amqp091.Persistent, // 消息持久化
+			ContentType:  "text/plain",       // 消息类型
+			Body:         body,               // 消息体
+			Timestamp:    time.Now(),         // 时间戳
+			Priority:     priority,           // 消息优先级（核心新增）
+		},
+	)
+}
+
 // CloseMQ 关闭 MQ 连接和信道（程序退出时调用）
 func CloseMQ() error {
 	if mqChannel != nil {
 		if err := mqChannel.Close(); err != nil {
-			log.Printf("close mq channel failed: %v", err)
+			slog.Error("close mq channel failed", "error", err)
 		}
 	}
 	if mqConn != nil {

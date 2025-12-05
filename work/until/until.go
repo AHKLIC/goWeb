@@ -15,27 +15,27 @@ import (
 	"github.com/google/uuid"
 )
 
-// 1. 全局配置
+// 全局配置
 const (
 	JWTSecret     = "your-secret-key-32bytes-long-1234" // 生产环境用环境变量读取，至少32位
 	JWTExpireHour = 24 * 30                             // JWT 有效期（小时）
 )
 
-// 2. JWT 自定义声明（存储用户核心信息）
+// JWT 自定义声明（存储用户核心信息）
 type JwtClaims struct {
 	UserID               uint64 `json:"user_id"`
 	Username             string `json:"username"`
 	jwt.RegisteredClaims        // 内置标准声明（过期时间、签发时间等）
 }
 
-// 3. 统一错误响应结构体
+// 统一错误响应结构体
 type Response struct {
 	Code    int         `json:"code"`    // 业务码
 	Message string      `json:"message"` // 提示信息
 	Data    interface{} `json:"data"`    // 响应数据（可选）
 }
 
-// 4. 自定义业务错误（支持错误码和消息）
+// 自定义业务错误（支持错误码和消息）
 type BusinessError struct {
 	Code    int
 	Message string
@@ -52,6 +52,12 @@ type LogLayout struct {
 	Cost      int64  `json:"cost"`
 	Status    int    `json:"status"`
 }
+
+// 全局常量（区分用户类型，便于后续使用）
+const (
+	UserTypeVIP    = "vip"    // VIP 用户（Token 校验成功）
+	UserTypeNormal = "normal" // 普通用户（无 Token 或 Token 无效）
+)
 
 func (e *BusinessError) Error() string {
 	return e.Message
@@ -77,7 +83,7 @@ func GetFuzzyLockKey(keyword string) string {
 	return fmt.Sprintf("%s%s", FuzzyLockPrefix, generateKeywordHash(keyword))
 }
 
-// 5. 全局错误处理和日志输出中间件（捕获所有 panic 和错误）并输出日志
+// 全局错误处理和日志输出中间件（捕获所有 panic 和错误）并输出日志
 func ErrorAndLogHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
@@ -112,23 +118,27 @@ func ErrorAndLogHandler() gin.HandlerFunc {
 			var bizErr *BusinessError
 			// 判断是否为自定义业务错误
 			if errors.As(err.Err, &bizErr) {
-				c.JSON(http.StatusOK, Response{
-					Code:    bizErr.Code,
-					Message: bizErr.Message,
-				})
+				layout.Status = bizErr.Code
+				if bizErr.Code != 601 {
+					c.JSON(http.StatusOK, Response{
+						Code:    bizErr.Code,
+						Message: bizErr.Message,
+					})
+
+				}
+
 			} else {
 				// 系统错误（如数据库、网络错误）
 				c.JSON(http.StatusInternalServerError, Response{
 					Code:    500,
 					Message: "操作失败：" + err.Err.Error(),
 				})
+				layout.Status = 500
 			}
-			layout.Status = bizErr.Code
 			layout.Error = err.Err.Error()
 			go func() {
 				logCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				defer cancel()
-				layout.Status = c.Writer.Status()
 				logData, _ := json.Marshal(layout)
 				if err := PublishMQ(logCtx, AccessLogQueueName, logData); err != nil {
 					slog.Error("publish access log msg failed: ", "error", err)
@@ -150,7 +160,7 @@ func ErrorAndLogHandler() gin.HandlerFunc {
 	}
 }
 
-// 6. JWT 生成工具（登录成功后调用）
+// JWT 生成工具（登录成功后调用）
 func GenerateJWT(userID uint64, username string) (string, error) {
 	// 构建 JWT 声明
 	claims := JwtClaims{
@@ -159,7 +169,7 @@ func GenerateJWT(userID uint64, username string) (string, error) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * JWTExpireHour)), // 过期时间
 			IssuedAt:  jwt.NewNumericDate(time.Now()),                                // 签发时间
-			Issuer:    "gin-jwt-demo",                                                // 签发者
+			Issuer:    "AHKLIC-GO-WEB",                                               // 签发者
 		},
 	}
 
@@ -168,7 +178,7 @@ func GenerateJWT(userID uint64, username string) (string, error) {
 	return token.SignedString([]byte(JWTSecret))
 }
 
-// 7. JWT 验证中间件（需要认证的路由添加此中间件）
+// JWT 验证中间件（需要认证的路由添加此中间件）
 func JWTMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 从请求头获取 Token（格式：Authorization: Bearer <token>）
@@ -215,5 +225,80 @@ func JWTMiddleware() gin.HandlerFunc {
 		}
 
 		c.Next() // 验证通过，执行后续路由
+	}
+}
+
+// PublicJWTMiddleware 软判断 JWT 中间件
+// 逻辑：
+// 1. 无 Authorization 头 → 普通用户（不报错，继续执行）
+// 2. 有 Authorization 头 → 校验 Token：
+//   - 校验成功 → VIP 用户
+//   - 校验失败 → 记录错误日志 → 普通用户（不中断流程）
+func PublicJWTMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 初始化用户类型为普通用户（默认）
+		userType := UserTypeNormal
+		var userId uint64
+		var userName string
+
+		// 1. 获取 Authorization 头
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			// 无 Token → 普通用户，直接向下执行（不记录错误）
+			c.Set("user_type", userType)
+			c.Next()
+			return
+		}
+
+		// 2. 有 Token，解析格式（Bearer <token>）
+		var tokenStr string
+		_, err := fmt.Sscanf(authHeader, "Bearer %s", &tokenStr)
+		if err != nil || tokenStr == "" {
+			// Token 格式错误 → 记录错误日志 → 普通用户
+			//601->401但是601不返回error给客户端
+			c.Error(&BusinessError{Code: 601, Message: "Token格式错误,降级为普通用户"})
+			c.Set("user_type", userType)
+			c.Next()
+			return
+		}
+
+		// 3. 验证 Token 签名和有效性
+		token, err := jwt.ParseWithClaims(tokenStr, &JwtClaims{}, func(token *jwt.Token) (interface{}, error) {
+			// 验证签名算法是否为 HS256（与你的 Token 生成逻辑一致）
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("不支持的签名算法：%v", token.Header["alg"])
+			}
+			return []byte(JWTSecret), nil // JWTSecret 是你的签名密钥（保持原有）
+		})
+
+		// 4. 处理 Token 校验结果
+		if err != nil || !token.Valid {
+			// Token 无效/过期 → 记录错误日志 → 普通用户
+			c.Error(&BusinessError{Code: 601, Message: "Token 无效或已过期,降级为普通用户"})
+			c.Set("user_type", userType)
+			c.Next()
+			return
+		}
+
+		// 5. Token 校验成功 → 提取用户信息，标记为 VIP 用户
+		if claims, ok := token.Claims.(*JwtClaims); ok {
+			userType = UserTypeVIP
+			userId = claims.UserID
+			userName = claims.Username
+		} else {
+			// Token 解析失败（极少发生）→ 记录错误 → 普通用户
+			c.Error(&BusinessError{Code: 601, Message: "Token 解析失败,降级为普通用户"})
+			c.Set("user_type", userType)
+			c.Next()
+			return
+		}
+
+		// 6. 将用户信息存入 Gin 上下文（后续接口可通过 c.Get 获取）
+		c.Set("user_type", userType)
+		c.Set("userId", userId)
+		c.Set("userName", userName)
+
+		// 7. 继续执行后续路由
+		c.Next()
 	}
 }

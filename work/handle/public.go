@@ -80,7 +80,13 @@ func GetLatestCrawleData(c *gin.Context) {
 
 // / api/public/query/fuzzy/search?keyword=XXX
 func SubmitFuzzyQuery(c *gin.Context) {
+
 	keyword := c.Query("keyword")
+	var priority uint8
+	userType := c.GetString("user_type")
+	if userType == until.UserTypeVIP {
+		priority = 10
+	}
 	if keyword == "" {
 		c.Error(&until.BusinessError{Code: 400, Message: "参数错误：keyword不能为空"})
 		return
@@ -141,7 +147,7 @@ func SubmitFuzzyQuery(c *gin.Context) {
 		msgJSON, _ := json.Marshal(msgBody)
 		publishCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := until.PublishMQ(publishCtx, until.FuzzyQueueName, msgJSON); err != nil {
+		if err := until.PublishPriorityMQ(publishCtx, until.FuzzyQueueName, msgJSON, priority); err != nil {
 			c.Error(&until.BusinessError{Code: 500, Message: "发布模糊查询 MQ 消息失败 keyword:" + keyword + " error:" + err.Error()})
 			return
 			// MQ 失败，降级为同步查 DB

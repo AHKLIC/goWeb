@@ -19,15 +19,16 @@ func RegisterRoutes(r *gin.Engine) {
 
 	// 公开路由组（无需认证）
 	public := r.Group("/api/public")
+	public.Use(until.PublicJWTMiddleware())
 	{
 
-		public.POST("/login", handle.LoginHandler) // 登录接口（生成 JWT）
-		public.GET("/health", handle.HealthCheck)  // 健康检查接口
 		public.GET("/data/latest", handle.GetLatestCrawleData)
 		public.GET("/query/fuzzy/search", handle.SubmitFuzzyQuery)
 		// /api/public/query/fuzzy/result
 		public.GET("/query/fuzzy/result", handle.GetFuzzyQueryResult)
 	}
+	public.POST("/login", handle.LoginHandler) // 登录接口（生成 JWT）
+	public.GET("/health", handle.HealthCheck)  // 健康检查接口
 
 	// 需认证路由组（添加 JWT 中间件）
 	auth := r.Group("/api/auth")

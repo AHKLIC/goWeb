@@ -37,7 +37,7 @@ func startAccessLogConsumer(ctx context.Context) {
 	if err != nil {
 		slog.Error("启动访问日志消费者失败", "error", err)
 	}
-
+	slog.Info("启动访问日志消费者成功")
 	for {
 		select {
 		case <-ctx.Done():
