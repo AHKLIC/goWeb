@@ -15,7 +15,7 @@ import (
 
 type DbManger struct {
 	MongoManger
-	RedisManger *RedisManger
+	*RedisManger
 }
 
 var (

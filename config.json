@@ -3,6 +3,7 @@
   "mongodb_name_data": "crawlersData",
   "mongodb_name_users": "userData",
    "redis_sentinelArr" : ["localhost:26379", "localhost:26380", "localhost:26381"],
-   "source_list":["bilibili", "weibo", "zhihu"]
+   "source_list":["bilibili", "weibo", "zhihu"],
+   "email_list":[{"email":"XXX@xx.com","auth_code":"XXXXx"}]
    
 }
